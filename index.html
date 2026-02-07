@@ -188,7 +188,7 @@
         const [hasInteractedWithSidebar, setHasInteractedWithSidebar] = useState(false);
         const [isRendering, setIsRendering] = useState(false);
         const [isContinuous, setIsContinuous] = useState(false);
-        const [zoomSpeed, setZoomSpeed] = useState(1.03); // Default zoom speed
+        const [zoomSpeed, setZoomSpeed] = useState(1.03); 
         const [aiAnalysis, setAiAnalysis] = useState(null);
         const [isAnalyzing, setIsAnalyzing] = useState(false);
         
@@ -399,10 +399,10 @@
         return (
           <div className="flex h-screen w-full bg-slate-950 text-slate-100 overflow-hidden font-sans relative">
             
-            {/* The Pawli Mandelbrot Explorer Facts Bubble */}
+            {/* The Pawli Mandelbrot Explorer Facts Bubble - Disabled on Mobile (hidden by default, md:block for desktops) */}
             {!sidebarOpen && (
               <div 
-                className="fact-bubble fixed pointer-events-none sm:block hidden"
+                className="fact-bubble fixed pointer-events-none md:block hidden"
                 style={{ 
                   left: bubblePos.x, 
                   top: bubblePos.y,
@@ -438,7 +438,7 @@
                     <MousePointer2 size={10}/> Explorer Guide
                   </p>
                   <p className="text-[11px] text-slate-400 leading-tight">
-                    Left-click to zoom, drag to navigate. Floating facts inhabit the silent, empty regions of the fractal plane.
+                    Left-click to zoom, drag to navigate. Floating facts inhabit the silent, empty regions of the fractal plane on larger screens.
                   </p>
                 </div>
 
@@ -549,8 +549,8 @@
               />
 
               {isRendering && (
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 px-8 py-3 bg-slate-900/50 backdrop-blur-lg rounded-full border border-slate-700 text-[10px] font-bold uppercase tracking-[0.4em] text-slate-400 animate-pulse pointer-events-none">
-                  Rendering Mathematical Infinity
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 px-8 py-3 bg-slate-900/50 backdrop-blur-lg rounded-full border border-slate-700 text-[10px] font-bold uppercase tracking-[0.4em] text-slate-400 animate-pulse pointer-events-none text-center">
+                  Unfolding Infinity
                 </div>
               )}
 
