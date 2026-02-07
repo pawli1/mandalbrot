@@ -1,0 +1,27 @@
+
+{
+  "name": "pawli-mandelbrot-explorer",
+  "version": "1.0.0",
+  "description": "An immersive, gamified Mandelbrot set explorer featuring real-time deep zooming and AI analysis.",
+  "main": "index.html",
+  "scripts": {
+    "start": "npx serve .",
+    "dev": "npx serve ."
+  },
+  "keywords": [
+    "fractal",
+    "mandelbrot",
+    "react",
+    "gemini-api",
+    "canvas",
+    "typescript"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@google/genai": "^1.40.0",
+    "lucide-react": "^0.463.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  }
+}

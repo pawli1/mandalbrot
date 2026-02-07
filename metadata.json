@@ -1,0 +1,5 @@
+{
+  "name": "The Pawli Mandelbrot Explorer",
+  "description": "An immersive, gamified Mandelbrot set explorer featuring real-time deep zooming, achievement hunting, and AI-powered fractal analysis using Gemini.",
+  "requestFramePermissions": []
+}
