@@ -54,7 +54,7 @@
       }
       .fact-bubble {
         pointer-events: none;
-        transition: opacity 0.8s ease, left 1.2s cubic-bezier(0.16, 1, 0.3, 1), top 1.2s cubic-bezier(0.16, 1, 0.3, 1);
+        transition: opacity 1s ease, left 1.5s cubic-bezier(0.16, 1, 0.3, 1), top 1.5s cubic-bezier(0.16, 1, 0.3, 1);
         z-index: 30;
       }
       .custom-scrollbar::-webkit-scrollbar {
@@ -189,11 +189,10 @@
           const factTimer = setInterval(() => {
             setFact(MANDELBROT_FACTS[Math.floor(Math.random() * MANDELBROT_FACTS.length)]);
             updateBubblePosition();
-          }, 8000);
+          }, 10000);
           return () => clearInterval(factTimer);
         }, [view]);
 
-        // Helper to get iteration count for a point
         const getIterationAt = (px, py, width, height, viewState) => {
           const { centerX, centerY, zoom, maxIterations } = viewState;
           const scale = 3.5 / zoom;
@@ -212,33 +211,43 @@
           if (!canvasRef.current) return;
           const { width, height } = canvasRef.current;
 
-          // Sample points along the screen perimeter (top, bottom, left, right edges)
+          // We want the box to appear closer to the center, away from parameters (edges)
+          // Sampling in a "middle ring" roughly 25-45% away from the center
           const samples = [];
-          const margin = 60;
-          const cardWidth = 240;
-          const cardHeight = 100;
+          const cardWidth = 260;
+          const cardHeight = 120;
+          const centerX = width / 2;
+          const centerY = height / 2;
 
-          // Generate edge candidates
-          for(let i = 0; i < 5; i++) {
-            samples.push({ x: margin + (width - margin * 2) * (i/4), y: margin }); // Top
-            samples.push({ x: margin + (width - margin * 2) * (i/4), y: height - margin - cardHeight }); // Bottom
-            samples.push({ x: margin, y: margin + (height - margin * 2) * (i/4) }); // Left
-            samples.push({ x: width - margin - cardWidth, y: margin + (height - margin * 2) * (i/4) }); // Right
-          }
+          // Radius candidates (avoiding the edges by staying in the inner 60% of the screen)
+          const radii = [width * 0.2, width * 0.3, width * 0.35];
+          const angles = [0, 45, 90, 135, 180, 225, 270, 315];
 
-          let bestPos = samples[0];
+          radii.forEach(r => {
+            angles.forEach(a => {
+              const angleRad = (a * Math.PI) / 180;
+              samples.push({
+                x: centerX + Math.cos(angleRad) * r - cardWidth/2,
+                y: centerY + Math.sin(angleRad) * r - cardHeight/2
+              });
+            });
+          });
+
+          let bestPos = { x: centerX - cardWidth/2, y: centerY - cardHeight/2 };
           let bestScore = -1;
 
           samples.forEach(pos => {
             const iter = getIterationAt(pos.x + cardWidth/2, pos.y + cardHeight/2, width, height, view);
-            // High score for "blank" areas (maxIterations = interior, < 10 = outer void)
-            const isEmpty = iter === view.maxIterations || iter < 8;
-            const score = isEmpty ? 100 : (iter < 15 ? 50 : 0);
+            // Prioritize empty interior (black) or outer void (low iteration)
+            const isEmpty = iter === view.maxIterations || iter < 12;
+            const score = isEmpty ? 100 : (iter < 20 ? 40 : 0);
             
-            // Randomly weight to prevent always picking the same corner if both are empty
-            const randomWeight = Math.random() * 20;
-            if (score + randomWeight > bestScore) {
-              bestScore = score + randomWeight;
+            // Bias towards being somewhat offset from the true center to not block focus
+            const distToCenter = Math.sqrt(Math.pow(pos.x + cardWidth/2 - centerX, 2) + Math.pow(pos.y + cardHeight/2 - centerY, 2));
+            const scoreBias = (distToCenter / (width/2)) * 10; 
+            
+            if (score + scoreBias > bestScore) {
+              bestScore = score + scoreBias;
               bestPos = pos;
             }
           });
@@ -340,71 +349,55 @@
         const onMouseMove = (e) => {
           const clientX = e.touches ? e.touches[0].clientX : e.clientX;
           const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-          
           if (!isDragging.current) return;
           const { width, height } = canvasRef.current;
           const dx = clientX - lastMouse.current.x;
           const dy = clientY - lastMouse.current.y;
           const sc = 3.5 / view.zoom;
           const r = width / height;
-          
-          setView(v => ({ 
-            ...v, 
-            centerX: v.centerX - (dx * sc * r) / width, 
-            centerY: v.centerY - (dy * sc) / height 
-          }));
+          setView(v => ({ ...v, centerX: v.centerX - (dx * sc * r) / width, centerY: v.centerY - (dy * sc) / height }));
           lastMouse.current = { x: clientX, y: clientY };
         };
 
         const onMouseUp = (e) => {
           if (!isDragging.current) return;
           isDragging.current = false;
-
           const clientX = e.changedTouches ? e.changedTouches[0].clientX : e.clientX;
           const clientY = e.changedTouches ? e.changedTouches[0].clientY : e.clientY;
           const dx = Math.abs(clientX - mouseDownPos.current.x);
           const dy = Math.abs(clientY - mouseDownPos.current.y);
           const duration = Date.now() - mouseDownTime.current;
-
           if (dx < 10 && dy < 10 && duration < 300) {
             const rect = canvasRef.current.getBoundingClientRect();
             const mouseX = clientX - rect.left;
             const mouseY = clientY - rect.top;
-            
             const { width, height } = canvasRef.current;
             const scale = 3.5 / view.zoom;
             const ratio = width / height;
-
             const clickX = view.centerX + ((mouseX - width/2) * scale * ratio) / width;
             const clickY = view.centerY + ((mouseY - height/2) * scale) / height;
-
-            setView(v => ({
-              ...v,
-              centerX: clickX,
-              centerY: clickY,
-              zoom: v.zoom * 2
-            }));
+            setView(v => ({ ...v, centerX: clickX, centerY: clickY, zoom: v.zoom * 2 }));
           }
         };
 
         return (
           <div className="flex h-screen w-full bg-slate-950 text-slate-100 overflow-hidden font-sans relative">
             
-            {/* Fact Bubble - Positioned at periphery over blank space */}
+            {/* Fact Bubble - Renamed and smarter central placement away from parameters */}
             {!sidebarOpen && (
               <div 
                 className="fact-bubble fixed pointer-events-none sm:block hidden"
                 style={{ 
                   left: bubblePos.x, 
                   top: bubblePos.y,
-                  opacity: isRendering ? 0 : 0.9
+                  opacity: isRendering ? 0 : 0.85
                 }}
               >
-                <div className="bg-slate-900/40 backdrop-blur-xl border border-white/10 rounded-2xl px-5 py-3 shadow-2xl max-w-[240px] text-center">
-                  <p className="text-[10px] text-blue-400 font-bold uppercase tracking-widest mb-1.5 opacity-60 flex items-center justify-center gap-2">
-                    <Info size={12}/> Perimeter Byte
+                <div className="bg-slate-950/60 backdrop-blur-2xl border border-blue-500/20 rounded-3xl px-6 py-4 shadow-2xl max-w-[280px] text-center">
+                  <p className="text-[9px] text-blue-400 font-bold uppercase tracking-[0.2em] mb-2 opacity-80 flex items-center justify-center gap-2">
+                    <Sparkles size={12} className="animate-pulse"/> The Pawli Mandelbrot Explorer Facts
                   </p>
-                  <p className="text-[11px] text-slate-200 leading-relaxed font-medium italic">
+                  <p className="text-[12px] text-slate-200 leading-relaxed font-medium tracking-tight">
                     {fact}
                   </p>
                 </div>
@@ -429,7 +422,7 @@
                     <MousePointer2 size={10}/> Explorer Guide
                   </p>
                   <p className="text-[11px] text-slate-400 leading-tight">
-                    Left-click to zoom, drag to navigate. Watch for floating facts that appear in tranquil, empty areas.
+                    Left-click to zoom, drag to navigate. Floating facts inhabit the silent, empty regions of the fractal plane.
                   </p>
                 </div>
 
@@ -515,8 +508,8 @@
               />
 
               {isRendering && (
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 px-8 py-3 bg-slate-900/60 backdrop-blur-lg rounded-full border border-slate-700 text-[10px] font-bold uppercase tracking-[0.3em] text-slate-400 animate-pulse pointer-events-none">
-                  Unfolding Infinity
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 px-8 py-3 bg-slate-900/50 backdrop-blur-lg rounded-full border border-slate-700 text-[10px] font-bold uppercase tracking-[0.4em] text-slate-400 animate-pulse pointer-events-none">
+                  Rendering Mathematical Infinity
                 </div>
               )}
 
