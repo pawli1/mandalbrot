@@ -530,7 +530,7 @@
                    {isAnalyzing ? <div className="w-5 h-5 border-2 border-white/50 border-t-white rounded-full animate-spin"/> : <Sparkles size={20}/>}
                 </button>
 
-                <div className="bg-slate-900/80 backdrop-blur-md border border-slate-700 rounded-full px-5 py-2 flex items-center shadow-xl">
+                <div className="bg-slate-900/80 backdrop-blur-md border border-slate-700 rounded-full px-5 py-2 hidden sm:flex items-center shadow-xl">
                   <span className="text-[10px] sm:text-[11px] font-bold text-slate-200 tracking-tight whitespace-nowrap">The Pawli Mandelbrot Explorer</span>
                 </div>
               </div>
@@ -548,14 +548,15 @@
                 className="w-full h-full cursor-crosshair" 
               />
 
-              {isRendering && (
+              {/* Suppress rendering message during Auto-Pilot Zoom for visual clarity */}
+              {isRendering && !isContinuous && (
                 <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 px-8 py-3 bg-slate-900/50 backdrop-blur-lg rounded-full border border-slate-700 text-[10px] font-bold uppercase tracking-[0.4em] text-slate-400 animate-pulse pointer-events-none text-center hidden md:block">
                   Rendering Mathematical Infinity
                 </div>
               )}
 
               {aiAnalysis && (
-                <div className="absolute bottom-6 left-6 right-6 sm:left-auto sm:w-80 bg-slate-900/95 backdrop-blur-2xl p-7 rounded-3xl border border-blue-500/20 shadow-2xl z-[45]">
+                <div className="absolute bottom-6 left-6 right-6 sm:left-auto sm:w-80 bg-slate-900/95 backdrop-blur-2xl p-7 rounded-3xl border border-blue-500/20 shadow-2xl z-[45] hidden md:block">
                   <button onClick={() => setAiAnalysis(null)} className="absolute top-5 right-5 text-slate-500 hover:text-slate-300 transition-colors"><X size={18}/></button>
                   <div className="flex items-center gap-2 text-blue-400 mb-4 uppercase tracking-[0.15em] font-bold text-[10px]">
                     <Sparkles size={14}/> Cognitive Insight
