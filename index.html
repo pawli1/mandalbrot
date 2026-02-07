@@ -60,6 +60,27 @@
       .custom-scrollbar::-webkit-scrollbar {
         width: 4px;
       }
+      /* Slider Styling */
+      input[type=range] {
+        -webkit-appearance: none;
+        background: transparent;
+      }
+      input[type=range]::-webkit-slider-runnable-track {
+        width: 100%;
+        height: 6px;
+        background: #1e293b;
+        border-radius: 3px;
+      }
+      input[type=range]::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        height: 16px;
+        width: 16px;
+        border-radius: 50%;
+        background: #3b82f6;
+        cursor: pointer;
+        margin-top: -5px;
+        box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
+      }
     </style>
     <script>
       window.process = window.process || { env: { API_KEY: "" } };
@@ -92,7 +113,7 @@
       import ReactDOM from 'react-dom/client';
       import { 
         ZoomIn, ZoomOut, RotateCcw, Sparkles, Map as MapIcon, 
-        Settings, Trophy, Target, ChevronRight, PlayCircle, Menu, X, MousePointer2, ChevronLeft, Info 
+        Settings, Trophy, Target, ChevronRight, PlayCircle, Menu, X, MousePointer2, ChevronLeft, Info, Wind 
       } from 'lucide-react';
       import { GoogleGenAI, Type } from "@google/genai";
 
@@ -167,6 +188,7 @@
         const [hasInteractedWithSidebar, setHasInteractedWithSidebar] = useState(false);
         const [isRendering, setIsRendering] = useState(false);
         const [isContinuous, setIsContinuous] = useState(false);
+        const [zoomSpeed, setZoomSpeed] = useState(1.03); // Default zoom speed
         const [aiAnalysis, setAiAnalysis] = useState(null);
         const [isAnalyzing, setIsAnalyzing] = useState(false);
         
@@ -210,17 +232,13 @@
         const updateBubblePosition = useCallback(() => {
           if (!canvasRef.current) return;
           const { width, height } = canvasRef.current;
-
-          // We want the box to appear closer to the center, away from parameters (edges)
-          // Sampling in a "middle ring" roughly 25-45% away from the center
-          const samples = [];
           const cardWidth = 260;
           const cardHeight = 120;
           const centerX = width / 2;
           const centerY = height / 2;
 
-          // Radius candidates (avoiding the edges by staying in the inner 60% of the screen)
-          const radii = [width * 0.2, width * 0.3, width * 0.35];
+          const samples = [];
+          const radii = [width * 0.15, width * 0.25, width * 0.35];
           const angles = [0, 45, 90, 135, 180, 225, 270, 315];
 
           radii.forEach(r => {
@@ -238,11 +256,9 @@
 
           samples.forEach(pos => {
             const iter = getIterationAt(pos.x + cardWidth/2, pos.y + cardHeight/2, width, height, view);
-            // Prioritize empty interior (black) or outer void (low iteration)
             const isEmpty = iter === view.maxIterations || iter < 12;
             const score = isEmpty ? 100 : (iter < 20 ? 40 : 0);
             
-            // Bias towards being somewhat offset from the true center to not block focus
             const distToCenter = Math.sqrt(Math.pow(pos.x + cardWidth/2 - centerX, 2) + Math.pow(pos.y + cardHeight/2 - centerY, 2));
             const scoreBias = (distToCenter / (width/2)) * 10; 
             
@@ -304,10 +320,10 @@
 
         useEffect(() => {
           if (isContinuous) {
-            const t = setInterval(() => setView(v => ({ ...v, zoom: v.zoom * 1.05 })), 50);
+            const t = setInterval(() => setView(v => ({ ...v, zoom: v.zoom * zoomSpeed })), 40);
             return () => clearInterval(t);
           }
-        }, [isContinuous]);
+        }, [isContinuous, zoomSpeed]);
 
         const handleAI = async () => {
           setIsAnalyzing(true);
@@ -383,7 +399,7 @@
         return (
           <div className="flex h-screen w-full bg-slate-950 text-slate-100 overflow-hidden font-sans relative">
             
-            {/* Fact Bubble - Renamed and smarter central placement away from parameters */}
+            {/* The Pawli Mandelbrot Explorer Facts Bubble */}
             {!sidebarOpen && (
               <div 
                 className="fact-bubble fixed pointer-events-none sm:block hidden"
@@ -393,9 +409,9 @@
                   opacity: isRendering ? 0 : 0.85
                 }}
               >
-                <div className="bg-slate-950/60 backdrop-blur-2xl border border-blue-500/20 rounded-3xl px-6 py-4 shadow-2xl max-w-[280px] text-center">
-                  <p className="text-[9px] text-blue-400 font-bold uppercase tracking-[0.2em] mb-2 opacity-80 flex items-center justify-center gap-2">
-                    <Sparkles size={12} className="animate-pulse"/> The Pawli Mandelbrot Explorer Facts
+                <div className="bg-slate-950/70 backdrop-blur-2xl border border-blue-500/20 rounded-3xl px-6 py-4 shadow-2xl max-w-[280px] text-center">
+                  <p className="text-[9px] text-blue-400 font-bold uppercase tracking-[0.2em] mb-2 opacity-90 flex items-center justify-center gap-2">
+                    <Sparkles size={12} className="animate-pulse text-blue-300"/> The Pawli Mandelbrot Explorer Facts
                   </p>
                   <p className="text-[12px] text-slate-200 leading-relaxed font-medium tracking-tight">
                     {fact}
@@ -425,6 +441,31 @@
                     Left-click to zoom, drag to navigate. Floating facts inhabit the silent, empty regions of the fractal plane.
                   </p>
                 </div>
+
+                <section>
+                  <p className="text-[10px] text-slate-500 font-bold uppercase mb-3 tracking-widest flex items-center gap-2">
+                    <Wind size={12}/> Flight Control
+                  </p>
+                  <div className="bg-slate-800/40 border border-slate-700/50 rounded-xl p-4 space-y-4">
+                    <div className="flex justify-between items-center mb-1">
+                      <span className="text-[11px] font-semibold text-slate-300">Auto-Pilot Warp Factor</span>
+                      <span className="text-[11px] font-mono text-blue-400">{((zoomSpeed - 1) * 100).toFixed(1)}%</span>
+                    </div>
+                    <input 
+                      type="range" 
+                      min="1.005" 
+                      max="1.15" 
+                      step="0.005" 
+                      value={zoomSpeed} 
+                      onChange={(e) => setZoomSpeed(parseFloat(e.target.value))}
+                      className="w-full h-1.5 rounded-lg appearance-none cursor-pointer bg-slate-700"
+                    />
+                    <div className="flex justify-between text-[9px] text-slate-500 font-bold uppercase tracking-tighter">
+                      <span>Slow</span>
+                      <span>High Velocity</span>
+                    </div>
+                  </div>
+                </section>
 
                 <div className="grid grid-cols-2 gap-2">
                   <button onClick={() => setView(v => ({...v, zoom: v.zoom*2}))} className="p-3 bg-slate-800 hover:bg-slate-700 rounded-lg border border-slate-700 text-xs transition-colors flex items-center justify-center gap-2 font-semibold"><ZoomIn size={14}/> Zoom In</button>
