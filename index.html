@@ -34,20 +34,45 @@
       ::-webkit-scrollbar-thumb:hover {
         background: #64748b;
       }
+      /* Custom loader animation */
+      .loading-pulse {
+        animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+      }
+      @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: .5; }
+      }
     </style>
-  <script type="importmap">
+    <!-- Define process.env shim before any scripts load -->
+    <script>
+      window.process = { env: { API_KEY: "" } }; 
+    </script>
+    <!-- Babel for on-the-fly TSX transpilation -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script type="importmap">
 {
   "imports": {
     "@google/genai": "https://esm.sh/@google/genai@^1.40.0",
+    "react": "https://esm.sh/react@19.0.0",
+    "react-dom": "https://esm.sh/react-dom@19.0.0",
+    "react-dom/client": "https://esm.sh/react-dom@19.0.0/client",
+    "lucide-react": "https://esm.sh/lucide-react@0.463.0",
     "react/": "https://esm.sh/react@^19.2.4/",
-    "react": "https://esm.sh/react@^19.2.4",
-    "lucide-react": "https://esm.sh/lucide-react@^0.563.0",
     "react-dom/": "https://esm.sh/react-dom@^19.2.4/"
   }
 }
 </script>
 </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="h-screen w-screen flex items-center justify-center bg-slate-950">
+        <div class="text-center">
+          <div class="w-16 h-16 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p class="text-slate-400 font-medium tracking-widest uppercase text-xs loading-pulse">Initializing Fractal Engine...</p>
+        </div>
+      </div>
+    </div>
+    <!-- Entry Point -->
+    <script type="text/babel" data-type="module" data-presets="typescript,react" src="./index.tsx"></script>
   </body>
 </html>
