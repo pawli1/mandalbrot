@@ -20,6 +20,7 @@
       }
       canvas {
         image-rendering: pixelated;
+        background: black;
       }
       ::-webkit-scrollbar {
         width: 8px;
@@ -34,7 +35,6 @@
       ::-webkit-scrollbar-thumb:hover {
         background: #64748b;
       }
-      /* Custom loader animation */
       .loading-pulse {
         animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
       }
@@ -43,25 +43,25 @@
         50% { opacity: .5; }
       }
     </style>
-    <!-- Define process.env shim before any scripts load -->
+    <!-- Define process.env shim for Gemini SDK -->
     <script>
-      window.process = { env: { API_KEY: "" } }; 
+      if (typeof window.process === 'undefined') {
+        window.process = { env: { API_KEY: "" } };
+      }
     </script>
     <!-- Babel for on-the-fly TSX transpilation -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script type="importmap">
-{
-  "imports": {
-    "@google/genai": "https://esm.sh/@google/genai@^1.40.0",
-    "react": "https://esm.sh/react@19.0.0",
-    "react-dom": "https://esm.sh/react-dom@19.0.0",
-    "react-dom/client": "https://esm.sh/react-dom@19.0.0/client",
-    "lucide-react": "https://esm.sh/lucide-react@0.463.0",
-    "react/": "https://esm.sh/react@^19.2.4/",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.4/"
-  }
-}
-</script>
+    {
+      "imports": {
+        "@google/genai": "https://esm.sh/@google/genai@1.4.0",
+        "react": "https://esm.sh/react@19.0.0",
+        "react-dom": "https://esm.sh/react-dom@19.0.0",
+        "react-dom/client": "https://esm.sh/react-dom@19.0.0/client",
+        "lucide-react": "https://esm.sh/lucide-react@0.463.0?external=react"
+      }
+    }
+    </script>
 </head>
   <body>
     <div id="root">
@@ -72,7 +72,301 @@
         </div>
       </div>
     </div>
-    <!-- Entry Point -->
-    <script type="text/babel" data-type="module" data-presets="typescript,react" src="./index.tsx"></script>
+
+    <!-- Consolidated Application Script -->
+    <script type="text/babel" data-type="module" data-presets="typescript,react">
+      import React, { useState, useEffect, useRef, useCallback } from 'react';
+      import ReactDOM from 'react-dom/client';
+      import { 
+        ZoomIn, ZoomOut, RotateCcw, Sparkles, Map as MapIcon, 
+        Settings, Trophy, Target, ChevronRight, PlayCircle, Menu, X 
+      } from 'lucide-react';
+      import { GoogleGenAI, Type } from "@google/genai";
+
+      // --- CONSTANTS ---
+      const COLOR_SCHEMES = {
+        classic: { name: 'Classic Blue', baseHue: 200 },
+        fire: { name: 'Inferno', baseHue: 0 },
+        ocean: { name: 'Abyssal Ocean', baseHue: 190 },
+        purple: { name: 'Cosmic Purple', baseHue: 280 },
+        matrix: { name: 'Digital Rain', baseHue: 120 },
+        sunset: { name: 'Vaporwave Sunset', baseHue: 330 },
+        psychedelic: { name: 'Psychedelic', baseHue: 60 }
+      };
+
+      const INTERESTING_LOCATIONS = [
+        { name: 'The Root', x: -0.5, y: 0, z: 1, desc: 'Where it all begins.' },
+        { name: 'Seahorse Valley', x: -0.7463, y: 0.1102, z: 100, desc: 'Countless seahorse-like filaments.' },
+        { name: 'Spiral Galaxy', x: -0.74364, y: 0.13182, z: 2000, desc: 'Infinite rotating structures.' },
+        { name: 'Elephant Valley', x: -0.1011, y: 0.9563, z: 100, desc: 'Bulbous, organic shapes.' },
+        { name: 'The Satellite', x: -0.7269, y: 0.1889, z: 5000, desc: 'A perfect miniature set.' }
+      ];
+
+      const ACHIEVEMENTS = [
+        { id: 'first_dive', name: 'First Dive', desc: 'Zoom past 10x', check: (s) => s.zoom > 10 },
+        { id: 'depth_seeker', name: 'Depth Seeker', desc: 'Reach 1,000x', check: (s) => s.zoom >= 1000 },
+        { id: 'abyssal', name: 'Abyssal Explorer', desc: 'Reach 1M zoom', check: (s) => s.zoom >= 1000000 }
+      ];
+
+      // --- UTILS ---
+      const hslToRgb = (h, s, l) => {
+        let r, g, b;
+        if (s === 0) r = g = b = l;
+        else {
+          const hue2rgb = (p, q, t) => {
+            if (t < 0) t += 1; if (t > 1) t -= 1;
+            if (t < 1/6) return p + (q - p) * 6 * t;
+            if (t < 1/2) return q;
+            if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+            return p;
+          };
+          const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+          const p = 2 * l - q;
+          r = hue2rgb(p, q, h + 1/3); g = hue2rgb(p, q, h); b = hue2rgb(p, q, h - 1/3);
+        }
+        return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
+      };
+
+      const getColor = (iteration, maxIter, scheme) => {
+        if (iteration === maxIter) return [0, 0, 0];
+        const t = iteration / maxIter;
+        const config = COLOR_SCHEMES[scheme];
+        const hue = (config.baseHue + t * 360) % 360;
+        if (scheme === 'matrix') return [0, Math.round(255 * t * 2), 0];
+        if (scheme === 'fire') return [Math.min(255, t * 510), Math.min(255, Math.max(0, t * 510 - 255)), 0];
+        return hslToRgb(hue / 360, 0.7, 0.2 + t * 0.6);
+      };
+
+      // --- COMPONENT ---
+      const App = () => {
+        const [view, setView] = useState({ centerX: -0.5, centerY: 0, zoom: 1, maxIterations: 120, colorScheme: 'classic' });
+        const [stats, setStats] = useState({ zoom: 1, points: 0, time: 0 });
+        const [sidebarOpen, setSidebarOpen] = useState(true);
+        const [isRendering, setIsRendering] = useState(false);
+        const [isContinuous, setIsContinuous] = useState(false);
+        const [aiAnalysis, setAiAnalysis] = useState(null);
+        const [unlocked, setUnlocked] = useState([]);
+        const [isAnalyzing, setIsAnalyzing] = useState(false);
+
+        const canvasRef = useRef(null);
+        const isDragging = useRef(false);
+        const lastMouse = useRef({ x: 0, y: 0 });
+
+        useEffect(() => {
+          const timer = setInterval(() => setStats(s => ({ ...s, time: s.time + 1 })), 1000);
+          return () => clearInterval(timer);
+        }, []);
+
+        useEffect(() => {
+          ACHIEVEMENTS.forEach(a => {
+            if (!unlocked.includes(a.id) && a.check(stats)) {
+              setUnlocked(prev => [...prev, a.id]);
+              setStats(s => ({ ...s, points: s.points + 100 }));
+            }
+          });
+        }, [stats.zoom]);
+
+        const draw = useCallback(() => {
+          const canvas = canvasRef.current;
+          if (!canvas) return;
+          setIsRendering(true);
+          const ctx = canvas.getContext('2d');
+          const { width, height } = canvas;
+          const { centerX, centerY, zoom, maxIterations, colorScheme } = view;
+          const imageData = ctx.createImageData(width, height);
+          const data = imageData.data;
+          const scale = 3.5 / zoom;
+          const ratio = width / height;
+
+          // Process in frames to keep UI responsive
+          requestAnimationFrame(() => {
+            for (let px = 0; px < width; px++) {
+              for (let py = 0; py < height; py++) {
+                const x0 = centerX + ((px - width/2) * scale * ratio) / width;
+                const y0 = centerY + ((py - height/2) * scale) / height;
+                let x = 0, y = 0, iter = 0;
+                while (x*x + y*y <= 4 && iter < maxIterations) {
+                  const xt = x*x - y*y + x0;
+                  y = 2*x*y + y0; x = xt; iter++;
+                }
+                const idx = (py * width + px) * 4;
+                const [r, g, b] = getColor(iter, maxIterations, colorScheme);
+                data[idx] = r; data[idx+1] = g; data[idx+2] = b; data[idx+3] = 255;
+              }
+            }
+            ctx.putImageData(imageData, 0, 0);
+            setIsRendering(false);
+            setStats(s => ({ ...s, zoom: view.zoom }));
+          });
+        }, [view]);
+
+        useEffect(() => {
+          if (canvasRef.current) {
+            canvasRef.current.width = canvasRef.current.offsetWidth;
+            canvasRef.current.height = canvasRef.current.offsetHeight;
+            draw();
+          }
+        }, [draw]);
+
+        useEffect(() => {
+          if (isContinuous) {
+            const t = setInterval(() => setView(v => ({ ...v, zoom: v.zoom * 1.05 })), 50);
+            return () => clearInterval(t);
+          }
+        }, [isContinuous]);
+
+        const handleAI = async () => {
+          setIsAnalyzing(true);
+          const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+          try {
+            const res = await ai.models.generateContent({
+              model: 'gemini-3-flash-preview',
+              contents: `Analyze the Mandelbrot set at X:${view.centerX}, Y:${view.centerY}, Zoom:${view.zoom}. Provide a catchy title, a short poetic description, and a suggestion for further exploration.`,
+              config: { 
+                responseMimeType: "application/json",
+                responseSchema: {
+                  type: Type.OBJECT,
+                  properties: { title: { type: Type.STRING }, description: { type: Type.STRING }, suggestion: { type: Type.STRING } },
+                  required: ["title", "description", "suggestion"]
+                }
+              }
+            });
+            setAiAnalysis(JSON.parse(res.text));
+          } catch (e) {
+            console.error("AI Error:", e);
+            setAiAnalysis({ title: "Infinite Void", description: "You are drifting through the recursive boundary of complex space.", suggestion: "Look for satellite sets." });
+          }
+          setIsAnalyzing(false);
+        };
+
+        return (
+          <div className="flex h-screen w-full bg-slate-950 text-slate-100 overflow-hidden font-sans">
+            {/* Achievement Toast */}
+            {unlocked.length > 0 && stats.points % 100 === 0 && (
+               <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 animate-bounce">
+                  <div className="bg-emerald-600 px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 border border-emerald-400">
+                    <Trophy className="text-white" size={20}/>
+                    <span className="font-bold text-sm">Achievement Unlocked!</span>
+                  </div>
+               </div>
+            )}
+
+            <div className={`transition-all duration-300 border-r border-slate-800 bg-slate-900/50 backdrop-blur-md flex flex-col ${sidebarOpen ? 'w-80' : 'w-0 overflow-hidden'}`}>
+              <div className="p-6 space-y-6 flex-1 overflow-y-auto">
+                <h1 className="text-xl font-bold text-blue-400 flex items-center gap-2"><Sparkles size={20}/> Pawli Explorer</h1>
+                <div className="grid grid-cols-2 gap-2">
+                  <button onClick={() => setView(v => ({...v, zoom: v.zoom*2}))} className="p-2 bg-slate-800 hover:bg-slate-700 rounded border border-slate-700 text-sm transition-colors flex items-center justify-center gap-2"><ZoomIn size={14}/> In</button>
+                  <button onClick={() => setView(v => ({...v, zoom: v.zoom*0.5}))} className="p-2 bg-slate-800 hover:bg-slate-700 rounded border border-slate-700 text-sm transition-colors flex items-center justify-center gap-2"><ZoomOut size={14}/> Out</button>
+                </div>
+                <section>
+                  <p className="text-[10px] text-slate-500 font-bold uppercase mb-2">Color Palettes</p>
+                  <div className="space-y-1">
+                    {Object.keys(COLOR_SCHEMES).map(s => (
+                      <button key={s} onClick={() => setView(v => ({...v, colorScheme: s}))} className={`w-full text-left p-2 rounded text-xs border transition-all ${view.colorScheme === s ? 'bg-blue-600 border-blue-500' : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-500'}`}>
+                        {COLOR_SCHEMES[s].name}
+                      </button>
+                    ))}
+                  </div>
+                </section>
+                <section>
+                  <p className="text-[10px] text-slate-500 font-bold uppercase mb-2">Landmarks</p>
+                  <div className="space-y-1">
+                    {INTERESTING_LOCATIONS.map(l => (
+                      <button key={l.name} onClick={() => setView({...view, centerX: l.x, centerY: l.y, zoom: l.z})} className="w-full text-left p-3 bg-slate-800 hover:bg-slate-700 rounded mb-1 text-xs border border-slate-700 transition-all group">
+                        <div className="flex justify-between items-center"><span className="font-bold group-hover:text-blue-400">{l.name}</span><ChevronRight size={12}/></div>
+                        <div className="opacity-50 text-[10px] mt-1">{l.desc}</div>
+                      </button>
+                    ))}
+                  </div>
+                </section>
+              </div>
+              <div className="p-4 bg-slate-900 border-t border-slate-800">
+                <div className="flex justify-between items-center text-[10px] font-bold uppercase text-slate-500 mb-2">
+                  <span>Zoom Level</span>
+                  <span className="text-blue-400">{stats.zoom.toExponential(1)}x</span>
+                </div>
+                <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                  <div className="bg-blue-500 h-full transition-all duration-500" style={{ width: `${Math.min(100, (Math.log10(stats.zoom) / 10) * 100)}%` }}></div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex-1 relative bg-black">
+              <div className="absolute top-4 left-4 z-10 flex gap-2">
+                <button onClick={() => setSidebarOpen(!sidebarOpen)} className="p-2 bg-slate-900/80 backdrop-blur border border-slate-700 rounded-full hover:bg-slate-800 transition-all shadow-xl"><Menu size={20}/></button>
+                <div className="bg-slate-900/80 backdrop-blur border border-slate-700 rounded-full px-4 py-1.5 flex items-center gap-4 shadow-xl">
+                  <span className="text-[10px] font-mono text-slate-400 tracking-wider">X: {view.centerX.toFixed(6)} | Y: {view.centerY.toFixed(6)}</span>
+                  <button onClick={handleAI} disabled={isAnalyzing} className="bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold px-4 py-1 rounded-full flex items-center gap-2 transition-all disabled:opacity-50 shadow-lg">
+                    {isAnalyzing ? <div className="w-3 h-3 border-2 border-white/50 border-t-white rounded-full animate-spin"/> : <Sparkles size={12}/>}
+                    {isAnalyzing ? 'Analyzing' : 'Gemini AI'}
+                  </button>
+                </div>
+              </div>
+
+              <canvas 
+                ref={canvasRef} 
+                onMouseDown={e => { isDragging.current = true; lastMouse.current = { x: e.clientX, y: e.clientY }; }} 
+                onMouseMove={e => {
+                  if (!isDragging.current) return;
+                  const dx = e.clientX - lastMouse.current.x; const dy = e.clientY - lastMouse.current.y;
+                  const sc = 3.5 / view.zoom; const r = canvasRef.current.width / canvasRef.current.height;
+                  setView(v => ({ ...v, centerX: v.centerX - (dx*sc*r)/canvasRef.current.width, centerY: v.centerY - (dy*sc)/canvasRef.current.height }));
+                  lastMouse.current = { x: e.clientX, y: e.clientY };
+                }} 
+                onMouseUp={() => isDragging.current = false} 
+                onMouseLeave={() => isDragging.current = false}
+                className="w-full h-full cursor-crosshair" 
+              />
+
+              {isRendering && (
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 px-6 py-2 bg-slate-900/60 backdrop-blur-md rounded-full border border-slate-700 text-[10px] font-bold uppercase tracking-widest text-slate-400 animate-pulse pointer-events-none">
+                  Rendering Frame...
+                </div>
+              )}
+
+              {aiAnalysis && (
+                <div className="absolute bottom-6 right-6 w-80 bg-slate-900/95 backdrop-blur-xl p-6 rounded-2xl border border-blue-500/30 shadow-[0_0_50px_-12px_rgba(59,130,246,0.5)] animate-in slide-in-from-bottom-10 fade-in duration-500">
+                  <button onClick={() => setAiAnalysis(null)} className="absolute top-4 right-4 text-slate-500 hover:text-slate-300 transition-colors"><X size={16}/></button>
+                  <div className="flex items-center gap-2 text-blue-400 mb-3">
+                    <Sparkles size={16}/>
+                    <p className="font-bold text-[10px] uppercase tracking-widest">Cognitive Insight</p>
+                  </div>
+                  <h3 className="font-bold text-lg mb-2 text-blue-50">{aiAnalysis.title}</h3>
+                  <p className="text-sm text-slate-300 italic mb-6 leading-relaxed">"{aiAnalysis.description}"</p>
+                  <div className="pt-4 border-t border-slate-800 flex items-start gap-3">
+                    <Target className="text-blue-500 mt-0.5 shrink-0" size={14}/>
+                    <p className="text-[11px] text-slate-400"><span className="text-blue-400 font-bold uppercase mr-1">Objective:</span> {aiAnalysis.suggestion}</p>
+                  </div>
+                </div>
+              )}
+
+              <div className="absolute right-6 top-1/2 -translate-y-1/2 flex flex-col gap-3">
+                <button 
+                  onClick={() => setIsContinuous(!isContinuous)} 
+                  className={`p-4 rounded-2xl border shadow-2xl transition-all duration-300 ${isContinuous ? 'bg-blue-600 border-blue-400 text-white scale-110' : 'bg-slate-900/80 border-slate-700 text-slate-300 hover:bg-slate-800'}`}
+                  title="Auto-Pilot Zoom"
+                >
+                  <PlayCircle size={28} className={isContinuous ? 'animate-pulse' : ''}/>
+                </button>
+                <button 
+                  onClick={() => setView({...view, centerX: -0.5, centerY: 0, zoom: 1})} 
+                  className="p-4 bg-slate-900/80 border border-slate-700 rounded-2xl text-slate-300 hover:bg-slate-800 transition-all shadow-2xl"
+                  title="Reset Coordinates"
+                >
+                  <RotateCcw size={28}/>
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      };
+
+      try {
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+      } catch (err) {
+        console.error("React Mounting Error:", err);
+      }
+    </script>
   </body>
 </html>
