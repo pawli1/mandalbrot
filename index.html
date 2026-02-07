@@ -21,7 +21,7 @@
       canvas {
         image-rendering: pixelated;
         background: black;
-        touch-action: none; /* Prevents scrolling while interacting with fractal */
+        touch-action: none;
       }
       ::-webkit-scrollbar {
         width: 8px;
@@ -43,7 +43,6 @@
         0%, 100% { opacity: 1; }
         50% { opacity: .5; }
       }
-      /* Sidebar Highlight Animation */
       @keyframes pulse-ring {
         0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7); }
         70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(59, 130, 246, 0); }
@@ -53,12 +52,18 @@
         animation: pulse-ring 2s infinite;
         border-color: rgba(59, 130, 246, 1);
       }
+      .fact-bubble {
+        pointer-events: none;
+        transition: opacity 0.8s ease, left 1.2s cubic-bezier(0.16, 1, 0.3, 1), top 1.2s cubic-bezier(0.16, 1, 0.3, 1);
+        z-index: 30;
+      }
+      .custom-scrollbar::-webkit-scrollbar {
+        width: 4px;
+      }
     </style>
-    <!-- Define process.env shim for Gemini SDK -->
     <script>
       window.process = window.process || { env: { API_KEY: "" } };
     </script>
-    <!-- Babel for on-the-fly TSX transpilation -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script type="importmap">
     {
@@ -82,17 +87,15 @@
       </div>
     </div>
 
-    <!-- Consolidated Application Script -->
     <script type="text/babel" data-type="module" data-presets="typescript,react">
       import React, { useState, useEffect, useRef, useCallback } from 'react';
       import ReactDOM from 'react-dom/client';
       import { 
         ZoomIn, ZoomOut, RotateCcw, Sparkles, Map as MapIcon, 
-        Settings, Trophy, Target, ChevronRight, PlayCircle, Menu, X, MousePointer2, ChevronLeft 
+        Settings, Trophy, Target, ChevronRight, PlayCircle, Menu, X, MousePointer2, ChevronLeft, Info 
       } from 'lucide-react';
       import { GoogleGenAI, Type } from "@google/genai";
 
-      // --- CONSTANTS ---
       const COLOR_SCHEMES = {
         classic: { name: 'Classic Blue', baseHue: 200 },
         fire: { name: 'Inferno', baseHue: 0 },
@@ -111,13 +114,24 @@
         { name: 'The Satellite', x: -0.7269, y: 0.1889, z: 5000, desc: 'A perfect miniature set.' }
       ];
 
-      const ACHIEVEMENTS = [
-        { id: 'first_dive', name: 'First Dive', desc: 'Zoom past 10x', check: (s) => s.zoom > 10 },
-        { id: 'depth_seeker', name: 'Depth Seeker', desc: 'Reach 1,000x', check: (s) => s.zoom >= 1000 },
-        { id: 'abyssal', name: 'Abyssal Explorer', desc: 'Reach 1M zoom', check: (s) => s.zoom >= 1000000 }
+      const MANDELBROT_FACTS = [
+        "The set is defined by z = z² + c.",
+        "It was named after Benoit Mandelbrot.",
+        "The boundary has infinite length.",
+        "Self-similarity occurs at every scale.",
+        "It contains an infinite number of mini-sets.",
+        "Benoit Mandelbrot coined 'fractal' in 1975.",
+        "Points inside never escape to infinity.",
+        "The cardioid is the largest structure.",
+        "Its area is approximately 1.506.",
+        "It is a visualization of the complex plane.",
+        "Julia sets are related to each point 'c'.",
+        "It is the most famous object in chaos theory.",
+        "Zooming reveals infinite worlds.",
+        "Calculated using complex number iteration.",
+        "The 'Main Cardioid' is the heart of the set."
       ];
 
-      // --- UTILS ---
       const hslToRgb = (h, s, l) => {
         let r, g, b;
         if (s === 0) r = g = b = l;
@@ -146,18 +160,19 @@
         return hslToRgb(hue / 360, 0.7, 0.2 + t * 0.6);
       };
 
-      // --- COMPONENT ---
       const App = () => {
-        // DEFAULT: Sidebar collapsed
         const [view, setView] = useState({ centerX: -0.5, centerY: 0, zoom: 1, maxIterations: 128, colorScheme: 'classic' });
-        const [stats, setStats] = useState({ zoom: 1, points: 0, time: 0 });
+        const [stats, setStats] = useState({ zoom: 1, time: 0 });
         const [sidebarOpen, setSidebarOpen] = useState(false);
         const [hasInteractedWithSidebar, setHasInteractedWithSidebar] = useState(false);
         const [isRendering, setIsRendering] = useState(false);
         const [isContinuous, setIsContinuous] = useState(false);
         const [aiAnalysis, setAiAnalysis] = useState(null);
-        const [unlocked, setUnlocked] = useState([]);
         const [isAnalyzing, setIsAnalyzing] = useState(false);
+        
+        const [fact, setFact] = useState(MANDELBROT_FACTS[0]);
+        const [bubblePos, setBubblePos] = useState({ x: -1000, y: -1000 });
+        const [isMouseOverCanvas, setIsMouseOverCanvas] = useState(false);
 
         const canvasRef = useRef(null);
         const isDragging = useRef(false);
@@ -171,13 +186,65 @@
         }, []);
 
         useEffect(() => {
-          ACHIEVEMENTS.forEach(a => {
-            if (!unlocked.includes(a.id) && a.check(stats)) {
-              setUnlocked(prev => [...prev, a.id]);
-              setStats(s => ({ ...s, points: s.points + 100 }));
+          const factTimer = setInterval(() => {
+            setFact(MANDELBROT_FACTS[Math.floor(Math.random() * MANDELBROT_FACTS.length)]);
+            updateBubblePosition();
+          }, 8000);
+          return () => clearInterval(factTimer);
+        }, [view]);
+
+        // Helper to get iteration count for a point
+        const getIterationAt = (px, py, width, height, viewState) => {
+          const { centerX, centerY, zoom, maxIterations } = viewState;
+          const scale = 3.5 / zoom;
+          const ratio = width / height;
+          const x0 = centerX + ((px - width/2) * scale * ratio) / width;
+          const y0 = centerY + ((py - height/2) * scale) / height;
+          let x = 0, y = 0, iter = 0;
+          while (x*x + y*y <= 4 && iter < maxIterations) {
+            const xt = x*x - y*y + x0;
+            y = 2*x*y + y0; x = xt; iter++;
+          }
+          return iter;
+        };
+
+        const updateBubblePosition = useCallback(() => {
+          if (!canvasRef.current) return;
+          const { width, height } = canvasRef.current;
+
+          // Sample points along the screen perimeter (top, bottom, left, right edges)
+          const samples = [];
+          const margin = 60;
+          const cardWidth = 240;
+          const cardHeight = 100;
+
+          // Generate edge candidates
+          for(let i = 0; i < 5; i++) {
+            samples.push({ x: margin + (width - margin * 2) * (i/4), y: margin }); // Top
+            samples.push({ x: margin + (width - margin * 2) * (i/4), y: height - margin - cardHeight }); // Bottom
+            samples.push({ x: margin, y: margin + (height - margin * 2) * (i/4) }); // Left
+            samples.push({ x: width - margin - cardWidth, y: margin + (height - margin * 2) * (i/4) }); // Right
+          }
+
+          let bestPos = samples[0];
+          let bestScore = -1;
+
+          samples.forEach(pos => {
+            const iter = getIterationAt(pos.x + cardWidth/2, pos.y + cardHeight/2, width, height, view);
+            // High score for "blank" areas (maxIterations = interior, < 10 = outer void)
+            const isEmpty = iter === view.maxIterations || iter < 8;
+            const score = isEmpty ? 100 : (iter < 15 ? 50 : 0);
+            
+            // Randomly weight to prevent always picking the same corner if both are empty
+            const randomWeight = Math.random() * 20;
+            if (score + randomWeight > bestScore) {
+              bestScore = score + randomWeight;
+              bestPos = pos;
             }
           });
-        }, [stats.zoom]);
+
+          setBubblePos(bestPos);
+        }, [view]);
 
         const draw = useCallback(() => {
           const canvas = canvasRef.current;
@@ -218,12 +285,13 @@
               canvasRef.current.width = canvasRef.current.offsetWidth;
               canvasRef.current.height = canvasRef.current.offsetHeight;
               draw();
+              updateBubblePosition();
             }
           };
           window.addEventListener('resize', handleResize);
           handleResize();
           return () => window.removeEventListener('resize', handleResize);
-        }, [draw]);
+        }, [draw, updateBubblePosition]);
 
         useEffect(() => {
           if (isContinuous) {
@@ -270,18 +338,20 @@
         };
 
         const onMouseMove = (e) => {
-          if (!isDragging.current) return;
           const clientX = e.touches ? e.touches[0].clientX : e.clientX;
           const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+          
+          if (!isDragging.current) return;
+          const { width, height } = canvasRef.current;
           const dx = clientX - lastMouse.current.x;
           const dy = clientY - lastMouse.current.y;
           const sc = 3.5 / view.zoom;
-          const r = canvasRef.current.width / canvasRef.current.height;
+          const r = width / height;
           
           setView(v => ({ 
             ...v, 
-            centerX: v.centerX - (dx * sc * r) / canvasRef.current.width, 
-            centerY: v.centerY - (dy * sc) / canvasRef.current.height 
+            centerX: v.centerX - (dx * sc * r) / width, 
+            centerY: v.centerY - (dy * sc) / height 
           }));
           lastMouse.current = { x: clientX, y: clientY };
         };
@@ -319,48 +389,60 @@
 
         return (
           <div className="flex h-screen w-full bg-slate-950 text-slate-100 overflow-hidden font-sans relative">
-            {/* Achievement Toast */}
-            {unlocked.length > 0 && stats.points % 100 === 0 && (
-               <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[60] animate-bounce">
-                  <div className="bg-emerald-600 px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 border border-emerald-400">
-                    <Trophy className="text-white" size={20}/>
-                    <span className="font-bold text-sm">Achievement Unlocked!</span>
-                  </div>
-               </div>
+            
+            {/* Fact Bubble - Positioned at periphery over blank space */}
+            {!sidebarOpen && (
+              <div 
+                className="fact-bubble fixed pointer-events-none sm:block hidden"
+                style={{ 
+                  left: bubblePos.x, 
+                  top: bubblePos.y,
+                  opacity: isRendering ? 0 : 0.9
+                }}
+              >
+                <div className="bg-slate-900/40 backdrop-blur-xl border border-white/10 rounded-2xl px-5 py-3 shadow-2xl max-w-[240px] text-center">
+                  <p className="text-[10px] text-blue-400 font-bold uppercase tracking-widest mb-1.5 opacity-60 flex items-center justify-center gap-2">
+                    <Info size={12}/> Perimeter Byte
+                  </p>
+                  <p className="text-[11px] text-slate-200 leading-relaxed font-medium italic">
+                    {fact}
+                  </p>
+                </div>
+              </div>
             )}
 
-            {/* Sidebar - Responsive Overlay on Mobile */}
+            {/* Sidebar */}
             <div className={`fixed inset-y-0 left-0 z-50 transition-transform duration-500 ease-in-out bg-slate-900/95 backdrop-blur-xl border-r border-slate-800 flex flex-col shadow-2xl
               ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} 
               w-full max-w-[320px] sm:w-80`}>
               
               <div className="p-6 flex justify-between items-center border-b border-slate-800/50">
-                <h1 className="text-xl font-bold text-blue-400 flex items-center gap-2"><Sparkles size={20}/> Explorer</h1>
+                <h1 className="text-xl font-bold text-blue-400 flex items-center gap-2 tracking-tight"><Sparkles size={20}/> Explorer</h1>
                 <button onClick={toggleSidebar} className="p-2 hover:bg-slate-800 rounded-full transition-colors">
                   <ChevronLeft size={20}/>
                 </button>
               </div>
 
               <div className="p-6 space-y-6 flex-1 overflow-y-auto custom-scrollbar">
-                <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl space-y-2">
+                <div className="p-3 bg-blue-500/5 border border-blue-500/10 rounded-xl space-y-1">
                   <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest flex items-center gap-2">
-                    <MousePointer2 size={10}/> Interaction
+                    <MousePointer2 size={10}/> Explorer Guide
                   </p>
                   <p className="text-[11px] text-slate-400 leading-tight">
-                    Left-click to zoom directly to a point, or drag to pan the landscape.
+                    Left-click to zoom, drag to navigate. Watch for floating facts that appear in tranquil, empty areas.
                   </p>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2">
-                  <button onClick={() => setView(v => ({...v, zoom: v.zoom*2}))} className="p-2 bg-slate-800 hover:bg-slate-700 rounded-lg border border-slate-700 text-sm transition-colors flex items-center justify-center gap-2"><ZoomIn size={14}/> In</button>
-                  <button onClick={() => setView(v => ({...v, zoom: v.zoom*0.5}))} className="p-2 bg-slate-800 hover:bg-slate-700 rounded-lg border border-slate-700 text-sm transition-colors flex items-center justify-center gap-2"><ZoomOut size={14}/> Out</button>
+                  <button onClick={() => setView(v => ({...v, zoom: v.zoom*2}))} className="p-3 bg-slate-800 hover:bg-slate-700 rounded-lg border border-slate-700 text-xs transition-colors flex items-center justify-center gap-2 font-semibold"><ZoomIn size={14}/> Zoom In</button>
+                  <button onClick={() => setView(v => ({...v, zoom: v.zoom*0.5}))} className="p-3 bg-slate-800 hover:bg-slate-700 rounded-lg border border-slate-700 text-xs transition-colors flex items-center justify-center gap-2 font-semibold"><ZoomOut size={14}/> Zoom Out</button>
                 </div>
 
                 <section>
-                  <p className="text-[10px] text-slate-500 font-bold uppercase mb-2">Color Palettes</p>
-                  <div className="space-y-1">
+                  <p className="text-[10px] text-slate-500 font-bold uppercase mb-3 tracking-widest">Aesthetic Shift</p>
+                  <div className="grid grid-cols-1 gap-1.5">
                     {Object.keys(COLOR_SCHEMES).map(s => (
-                      <button key={s} onClick={() => setView(v => ({...v, colorScheme: s}))} className={`w-full text-left p-2.5 rounded-lg text-xs border transition-all ${view.colorScheme === s ? 'bg-blue-600 border-blue-500 text-white shadow-lg' : 'bg-slate-800/50 border-slate-700 text-slate-400 hover:border-slate-500'}`}>
+                      <button key={s} onClick={() => setView(v => ({...v, colorScheme: s}))} className={`w-full text-left p-3 rounded-lg text-[11px] border transition-all font-medium ${view.colorScheme === s ? 'bg-blue-600 border-blue-500 text-white shadow-lg' : 'bg-slate-800/40 border-slate-700/50 text-slate-400 hover:border-slate-500 hover:bg-slate-800'}`}>
                         {COLOR_SCHEMES[s].name}
                       </button>
                     ))}
@@ -368,52 +450,55 @@
                 </section>
 
                 <section>
-                  <p className="text-[10px] text-slate-500 font-bold uppercase mb-2">Famous Coordinates</p>
-                  <div className="space-y-1">
+                  <p className="text-[10px] text-slate-500 font-bold uppercase mb-3 tracking-widest">Co-ordinates</p>
+                  <div className="space-y-1.5">
                     {INTERESTING_LOCATIONS.map(l => (
-                      <button key={l.name} onClick={() => { setView({...view, centerX: l.x, centerY: l.y, zoom: l.z}); if (window.innerWidth < 640) setSidebarOpen(false); }} className="w-full text-left p-3 bg-slate-800/50 hover:bg-slate-800 rounded-lg mb-1 text-xs border border-slate-700 transition-all group">
-                        <div className="flex justify-between items-center"><span className="font-bold group-hover:text-blue-400">{l.name}</span><ChevronRight size={12}/></div>
-                        <div className="opacity-50 text-[10px] mt-1 line-clamp-1">{l.desc}</div>
+                      <button key={l.name} onClick={() => { setView({...view, centerX: l.x, centerY: l.y, zoom: l.z}); if (window.innerWidth < 640) setSidebarOpen(false); }} className="w-full text-left p-3.5 bg-slate-800/40 hover:bg-slate-800 rounded-lg text-xs border border-slate-700/50 transition-all group">
+                        <div className="flex justify-between items-center"><span className="font-bold group-hover:text-blue-400 tracking-tight">{l.name}</span><ChevronRight size={12}/></div>
+                        <div className="opacity-40 text-[10px] mt-1.5 line-clamp-1 italic">{l.desc}</div>
                       </button>
                     ))}
                   </div>
                 </section>
               </div>
 
-              <div className="p-4 bg-slate-900 border-t border-slate-800">
-                <div className="flex justify-between items-center text-[10px] font-bold uppercase text-slate-500 mb-2">
+              <div className="p-5 bg-slate-900 border-t border-slate-800">
+                <div className="flex justify-between items-center text-[10px] font-bold uppercase text-slate-500 mb-2.5 tracking-widest">
                   <span>Zoom Multiplier</span>
-                  <span className="text-blue-400">{stats.zoom.toExponential(1)}x</span>
+                  <span className="text-blue-400 tracking-tighter font-mono">{stats.zoom.toExponential(1)}x</span>
                 </div>
-                <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
-                  <div className="bg-blue-500 h-full transition-all duration-700" style={{ width: `${Math.min(100, (Math.log10(stats.zoom) / 12) * 100)}%` }}></div>
+                <div className="w-full bg-slate-800 h-1 rounded-full overflow-hidden">
+                  <div className="bg-blue-500 h-full transition-all duration-1000 ease-out" style={{ width: `${Math.min(100, (Math.log10(stats.zoom) / 12) * 100)}%` }}></div>
                 </div>
               </div>
             </div>
 
-            {/* Main Content Area */}
+            {/* Main Area */}
             <div className="flex-1 relative bg-black flex flex-col">
               <div className="absolute top-4 left-4 z-40 flex items-center gap-2">
                 <button 
                   onClick={toggleSidebar} 
-                  className={`p-3 bg-slate-900/80 backdrop-blur border rounded-full hover:bg-slate-800 transition-all shadow-xl
+                  className={`p-3 bg-slate-900/80 backdrop-blur-md border rounded-full hover:bg-slate-800 transition-all shadow-xl
                     ${!hasInteractedWithSidebar ? 'highlight-hint' : 'border-slate-700'}`}
                 >
                   <Menu size={20}/>
                 </button>
                 
-                <div className="bg-slate-900/80 backdrop-blur border border-slate-700 rounded-full px-4 py-1.5 flex items-center gap-4 shadow-xl max-sm:hidden">
-                  <span className="text-[10px] font-mono text-slate-400 tracking-wider">X: {view.centerX.toFixed(6)} | Y: {view.centerY.toFixed(6)}</span>
+                <div className="bg-slate-900/80 backdrop-blur-md border border-slate-700 rounded-full px-4 py-2 flex items-center gap-4 shadow-xl max-sm:hidden">
+                  <span className="text-[10px] font-mono text-slate-400 tracking-widest">X: {view.centerX.toFixed(6)} | Y: {view.centerY.toFixed(6)}</span>
                   <button onClick={handleAI} disabled={isAnalyzing} className="bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold px-4 py-1 rounded-full flex items-center gap-2 transition-all disabled:opacity-50 shadow-lg">
                     {isAnalyzing ? <div className="w-3 h-3 border-2 border-white/50 border-t-white rounded-full animate-spin"/> : <Sparkles size={12}/>}
                     {isAnalyzing ? 'Analyzing' : 'Gemini AI'}
                   </button>
                 </div>
                 
-                {/* Mobile AI Button */}
                 <button onClick={handleAI} disabled={isAnalyzing} className="sm:hidden bg-blue-600 p-3 rounded-full shadow-lg border border-blue-500 transition-all active:scale-95 disabled:opacity-50">
                    {isAnalyzing ? <div className="w-5 h-5 border-2 border-white/50 border-t-white rounded-full animate-spin"/> : <Sparkles size={20}/>}
                 </button>
+
+                <div className="bg-slate-900/80 backdrop-blur-md border border-slate-700 rounded-full px-5 py-2 flex items-center shadow-xl">
+                  <span className="text-[10px] sm:text-[11px] font-bold text-slate-200 tracking-tight whitespace-nowrap">The Pawli Mandelbrot Explorer</span>
+                </div>
               </div>
 
               <canvas 
@@ -424,44 +509,46 @@
                 onTouchStart={onMouseDown}
                 onTouchMove={onMouseMove}
                 onTouchEnd={onMouseUp}
+                onMouseEnter={() => setIsMouseOverCanvas(true)}
+                onMouseLeave={() => setIsMouseOverCanvas(false)}
                 className="w-full h-full cursor-crosshair" 
               />
 
               {isRendering && (
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 px-6 py-2 bg-slate-900/60 backdrop-blur-md rounded-full border border-slate-700 text-[10px] font-bold uppercase tracking-widest text-slate-400 animate-pulse pointer-events-none">
-                  Rendering...
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 px-8 py-3 bg-slate-900/60 backdrop-blur-lg rounded-full border border-slate-700 text-[10px] font-bold uppercase tracking-[0.3em] text-slate-400 animate-pulse pointer-events-none">
+                  Unfolding Infinity
                 </div>
               )}
 
               {aiAnalysis && (
-                <div className="absolute bottom-6 left-6 right-6 sm:left-auto sm:w-80 bg-slate-900/95 backdrop-blur-xl p-6 rounded-2xl border border-blue-500/30 shadow-[0_0_50px_-12px_rgba(59,130,246,0.5)] z-[45]">
-                  <button onClick={() => setAiAnalysis(null)} className="absolute top-4 right-4 text-slate-500 hover:text-slate-300"><X size={16}/></button>
-                  <div className="flex items-center gap-2 text-blue-400 mb-3 uppercase tracking-widest font-bold text-[10px]">
+                <div className="absolute bottom-6 left-6 right-6 sm:left-auto sm:w-80 bg-slate-900/95 backdrop-blur-2xl p-7 rounded-3xl border border-blue-500/20 shadow-2xl z-[45]">
+                  <button onClick={() => setAiAnalysis(null)} className="absolute top-5 right-5 text-slate-500 hover:text-slate-300 transition-colors"><X size={18}/></button>
+                  <div className="flex items-center gap-2 text-blue-400 mb-4 uppercase tracking-[0.15em] font-bold text-[10px]">
                     <Sparkles size={14}/> Cognitive Insight
                   </div>
-                  <h3 className="font-bold text-lg mb-2 text-blue-50">{aiAnalysis.title}</h3>
-                  <p className="text-sm text-slate-300 italic mb-6 leading-relaxed">"{aiAnalysis.description}"</p>
-                  <div className="pt-4 border-t border-slate-800 flex items-start gap-3 text-[11px]">
-                    <Target className="text-blue-500 mt-0.5 shrink-0" size={14}/>
-                    <p className="text-slate-400"><span className="text-blue-400 font-bold uppercase mr-1">Objective:</span> {aiAnalysis.suggestion}</p>
+                  <h3 className="font-bold text-xl mb-3 text-blue-50 tracking-tight leading-tight">{aiAnalysis.title}</h3>
+                  <p className="text-sm text-slate-300 italic mb-6 leading-relaxed opacity-90">"{aiAnalysis.description}"</p>
+                  <div className="pt-5 border-t border-slate-800/50 flex items-start gap-3.5 text-[11px]">
+                    <Target className="text-blue-500 mt-0.5 shrink-0" size={16}/>
+                    <p className="text-slate-400"><span className="text-blue-400 font-bold uppercase mr-1.5">Explore:</span> {aiAnalysis.suggestion}</p>
                   </div>
                 </div>
               )}
 
-              <div className="absolute right-6 top-1/2 -translate-y-1/2 flex flex-col gap-3 z-40">
+              <div className="absolute right-6 top-1/2 -translate-y-1/2 flex flex-col gap-4 z-40">
                 <button 
                   onClick={() => setIsContinuous(!isContinuous)} 
-                  className={`p-4 rounded-2xl border shadow-2xl transition-all duration-300 active:scale-95 ${isContinuous ? 'bg-blue-600 border-blue-400 text-white scale-110 shadow-blue-500/20' : 'bg-slate-900/80 border-slate-700 text-slate-300 hover:bg-slate-800'}`}
+                  className={`p-4 rounded-2xl border shadow-2xl transition-all duration-500 active:scale-90 ${isContinuous ? 'bg-blue-600 border-blue-400 text-white scale-110 shadow-blue-500/40' : 'bg-slate-900/80 border-slate-700 text-slate-300 hover:bg-slate-800 hover:border-slate-600'}`}
                   title="Auto-Pilot Zoom"
                 >
-                  <PlayCircle size={24} className={isContinuous ? 'animate-pulse' : ''}/>
+                  <PlayCircle size={26} className={isContinuous ? 'animate-pulse' : ''}/>
                 </button>
                 <button 
                   onClick={() => setView({...view, centerX: -0.5, centerY: 0, zoom: 1})} 
-                  className="p-4 bg-slate-900/80 border border-slate-700 rounded-2xl text-slate-300 hover:bg-slate-800 transition-all shadow-2xl active:scale-95"
-                  title="Reset Coordinates"
+                  className="p-4 bg-slate-900/80 border border-slate-700 rounded-2xl text-slate-300 hover:bg-slate-800 hover:border-slate-600 transition-all shadow-2xl active:scale-90"
+                  title="Reset World"
                 >
-                  <RotateCcw size={24}/>
+                  <RotateCcw size={26}/>
                 </button>
               </div>
             </div>
